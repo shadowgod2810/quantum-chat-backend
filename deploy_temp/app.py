@@ -39,7 +39,8 @@ if ENVIRONMENT == 'production':
     # In production, specify exact allowed origins
     allowed_origins = [
         'https://quantum-chat.netlify.app',
-        'https://quantum-chat.vercel.app'
+        'https://quantum-chat.vercel.app',
+        'http:localhost:8080'
     ]
 else:
     # For development, allow all origins for easier testing
