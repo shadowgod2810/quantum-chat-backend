@@ -40,6 +40,7 @@ if ENVIRONMENT == 'production':
     allowed_origins = [
         'https://quantum-chat.netlify.app',
         'https://quantum-chat.vercel.app',
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
         'http:localhost:8080'
     ]
 else:
