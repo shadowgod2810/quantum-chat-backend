@@ -1,0 +1,55 @@
+{
+  "name": "QuantumChat API",
+  "description": "Backend API for QuantumChat secure messaging application",
+  "repository": "https://github.com/yourusername/quantum-chat",
+  "keywords": ["python", "flask", "socketio", "quantum", "cryptography", "api"],
+  "env": {
+    "FLASK_ENV": {
+      "description": "Environment for Flask application",
+      "value": "production"
+    },
+    "DEV_MODE": {
+      "description": "Enable development mode with simplified encryption",
+      "value": "false"
+    },
+    "SECRET_KEY": {
+      "description": "Secret key for session security",
+      "generator": "secret"
+    },
+    "DATABASE_URL": {
+      "description": "Production database connection string",
+      "required": true
+    },
+    "REDIS_URL": {
+      "description": "Redis connection for Socket.IO scaling",
+      "required": true
+    },
+    "CORS_ORIGINS": {
+      "description": "Allowed origins for CORS",
+      "value": "https://quantum-chat.yourdomain.com"
+    },
+    "LOG_LEVEL": {
+      "description": "Logging level for the application",
+      "value": "ERROR"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "standard-1x"
+    }
+  },
+  "addons": [
+    "heroku-postgresql:standard-0",
+    "heroku-redis:hobby-dev",
+    "papertrail:choklad"
+  ],
+  "scripts": {
+    "postdeploy": "python -c 'from app import init_database; init_database()'"
+  }
+}

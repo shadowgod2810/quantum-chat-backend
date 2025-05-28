@@ -1,0 +1,27 @@
+{
+  "name": "quantum-whisper-backend",
+  "version": "1.0.0",
+  "description": "Backend for Quantum Whisper",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "test": "jest",
+    "build": "echo \"Building backend\" && npm install",
+    "deploy": "echo \"Deploying backend to production\" && python -m pip install -r ../requirements.txt",
+    "start:prod": "FLASK_ENV=production python app.py",
+    "start:dev": "FLASK_ENV=development DEV_MODE=true python app.py"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.3.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "python-shell": "^5.0.0",
+    "socket.io": "^4.7.4"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.3"
+  }
+}
