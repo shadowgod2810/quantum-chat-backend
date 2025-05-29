@@ -14,16 +14,28 @@ user_rooms: Dict[str, Set[str]] = {}  # Maps username to set of rooms they're in
 
 def init_socketio(app: Flask) -> SocketIO:
     """Initialize and configure the Socket.IO server"""
+    # Get environment setting from app
+    environment = app.config.get('ENV', 'development')
+    
+    # Get allowed origins from app
+    allowed_origins = app.config.get('ALLOWED_ORIGINS', '*')
+    
     # Configure Socket.IO with optimized settings
     socketio = SocketIO(
         app,
-        cors_allowed_origins="*",  # Allow all origins for development
+        cors_allowed_origins=allowed_origins,
         ping_timeout=120,  # Longer ping timeout for better reliability
         ping_interval=15,   # More frequent pings to detect disconnection
         async_mode='eventlet',  # Use eventlet for best performance
         logger=True,  # Enable logging for debugging
-        engineio_logger=True  # Enable engine.io logging
+        engineio_logger=True,  # Enable engine.io logging
+        cookie=False  # Disable cookies to avoid CORS issues
     )
+    
+    print(f"Socket.IO initialized with CORS allowed origins: {allowed_origins}")
+    print(f"Environment: {environment}")
+    print(f"Socket.IO configuration: async_mode={socketio.async_mode}")
+    
     
     # Register event handlers
     register_event_handlers(socketio)

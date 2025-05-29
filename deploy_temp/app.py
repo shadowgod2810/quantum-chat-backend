@@ -41,7 +41,10 @@ if ENVIRONMENT == 'production':
         'https://quantum-chat.netlify.app',
         'https://quantum-chat.vercel.app',
         'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
-        'http:localhost:8080'
+        'http://quantum-chat-ui.s3-website-us-east-1.amazonaws.com',  # Added your S3 bucket
+        'http://quantum-chat-ui.s3-website.ap-south-1.amazonaws.com',  # Alternative region format
+        'http://quantum-chat-ui.s3-website.us-east-1.amazonaws.com',  # Alternative region format
+        'http://localhost:8080'  # Fixed typo in localhost URL
     ]
 else:
     # For development, allow all origins for easier testing
@@ -49,6 +52,8 @@ else:
 
 # Configure Flask app
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
+app.config['ENV'] = ENVIRONMENT
+app.config['ALLOWED_ORIGINS'] = allowed_origins
 
 # User session storage - in production this would be in Redis or another persistent store
 user_sessions = {}
@@ -125,10 +130,24 @@ socketio = init_socketio(app)
 @app.after_request
 def add_cors_headers(response):
     # Get the origin from the request
-    origin = request.headers.get('Origin', '*')
+    origin = request.headers.get('Origin')
     
-    # Set CORS headers - allow all origins in development mode
-    response.headers['Access-Control-Allow-Origin'] = '*'
+    if origin:
+        # In production, check if origin is in allowed list
+        if ENVIRONMENT == 'production':
+            if origin in allowed_origins:
+                response.headers['Access-Control-Allow-Origin'] = origin
+            else:
+                # Log the rejected origin for debugging
+                app.logger.warning(f"Rejected CORS request from origin: {origin}")
+                response.headers['Access-Control-Allow-Origin'] = allowed_origins[0]
+        else:
+            # In development, allow any origin
+            response.headers['Access-Control-Allow-Origin'] = origin
+    else:
+        # No origin in request, use wildcard in development or first allowed in production
+        response.headers['Access-Control-Allow-Origin'] = '*' if ENVIRONMENT == 'development' else allowed_origins[0]
+    
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
     
@@ -137,6 +156,10 @@ def add_cors_headers(response):
     
     # Cache preflight requests
     response.headers['Access-Control-Max-Age'] = '3600'
+    
+    # Log headers for debugging in development
+    if ENVIRONMENT == 'development' or DEV_MODE:
+        app.logger.debug(f"CORS headers set: {dict(response.headers)}")
     
     return response
 
