@@ -517,6 +517,32 @@ def login():
         return jsonify({'error': 'Invalid username or password'}), 401
 
 
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    app.logger.info("--- /api/logout ROUTE HIT ---")
+    data = request.json
+    session_id = data.get('session_id')
+    
+    if not session_id:
+        return jsonify({'error': 'Session ID is required'}), 400
+    
+    # Remove session from database
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+        conn.close()
+        
+        # Also remove from in-memory session cache if it exists
+        if session_id in user_sessions:
+            del user_sessions[session_id]
+            
+        return jsonify({'message': 'Logout successful'}), 200
+    except Exception as e:
+        app.logger.error(f"Error during logout: {e}")
+        return jsonify({'error': 'An error occurred during logout'}), 500
+
 def broadcast_user_list():
     app.logger.info("Broadcasting updated user list to all clients.")
     active_usernames = list(user_to_sid.keys())
