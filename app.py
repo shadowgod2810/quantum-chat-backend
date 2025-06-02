@@ -47,6 +47,8 @@ if ENVIRONMENT == 'production':
         'http://quantum-chat-frontend.s3-website-ap-south-1.amazonaws.com',
         'http://quantum-chat-frontend.s3-website.us-east-1.amazonaws.com',
         'http://quantum-chat-frontend.s3-website-us-east-1.amazonaws.com',
+        'http://quantum-chat-frontend.s3.amazonaws.com',
+        'http://quantum-chat-frontend.s3.ap-south-1.amazonaws.com',
     ]
 else:
     # For development, allow all origins for easier testing
