@@ -139,6 +139,14 @@ def register_event_handlers(socketio: SocketIO) -> None:
         print(f"Current online users: {list(user_to_sid.keys())}")
         
         # Notify the client of successful authentication
+        # Send both 'authenticated' (for frontend) and 'authentication_success' (for backward compatibility)
+        emit('authenticated', {
+            'username': username,
+            'status': 'authenticated',
+            'message': 'Authentication successful'
+        })
+        
+        # Also emit the original event for backward compatibility
         emit('authentication_success', {
             'username': username,
             'status': 'authenticated',
@@ -225,6 +233,49 @@ def register_event_handlers(socketio: SocketIO) -> None:
             import traceback
             traceback.print_exc()
             emit('direct_message_response', {'success': False, 'error': str(e)})
+    
+    @socketio.on('mark_as_read')
+    def handle_mark_as_read(data):
+        """Handle marking messages as read"""
+        # Check if user is authenticated
+        if request.sid not in sid_to_user:
+            emit('error', {'message': 'Not authenticated'})
+            return
+        
+        username = sid_to_user[request.sid]
+        message_id = data.get('message_id')
+        sender_username = data.get('sender_username')
+        
+        if not message_id or not sender_username:
+            emit('error', {'message': 'Missing message_id or sender_username'})
+            return
+        
+        try:
+            # Mark the message as read in the database
+            from .database import mark_message_as_read
+            success = mark_message_as_read(message_id)
+            
+            # Notify the sender that their message has been read
+            if success and sender_username in user_to_sid:
+                sender_sid = user_to_sid[sender_username]
+                emit('message_read', {
+                    'message_id': message_id,
+                    'read_by': username
+                }, to=sender_sid)
+                
+                print(f"Notified {sender_username} that message {message_id} was read by {username}")
+            
+            # Send confirmation to the client
+            emit('mark_as_read_response', {
+                'success': success,
+                'message_id': message_id
+            })
+            
+        except Exception as e:
+            print(f"Error marking message as read: {e}")
+            import traceback
+            traceback.print_exc()
+            emit('mark_as_read_response', {'success': False, 'error': str(e)})
     
     @socketio.on('get_message_history')
     def handle_get_message_history(data):

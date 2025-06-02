@@ -261,5 +261,35 @@ def get_recent_conversations(username: str, limit: int = 20) -> List[Dict[str, A
     finally:
         conn.close()
 
+def mark_message_as_read(message_id: str) -> bool:
+    """
+    Mark a specific message as read by its ID
+    
+    Args:
+        message_id: The ID of the message to mark as read
+        
+    Returns:
+        Boolean indicating success
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Update the message
+        cursor.execute(
+            'UPDATE messages SET is_read = 1 WHERE id = ?',
+            (message_id,)
+        )
+        
+        # Check if a row was affected
+        affected_rows = cursor.rowcount
+        conn.commit()
+        conn.close()
+        
+        return affected_rows > 0
+    except Exception as e:
+        print(f"Error marking message as read: {e}")
+        return False
+
 # Initialize the database when this module is imported
 init_db()
