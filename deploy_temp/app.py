@@ -41,11 +41,7 @@ if ENVIRONMENT == 'production':
     allowed_origins = [
         'https://quantum-chat.netlify.app',
         'https://quantum-chat.vercel.app',
-        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
-        'http://quantum-chat-ui.s3-website-us-east-1.amazonaws.com',  # Added your S3 bucket
-        'http://quantum-chat-ui.s3-website.ap-south-1.amazonaws.com',  # Alternative region format
-        'http://quantum-chat-ui.s3-website.us-east-1.amazonaws.com',  # Alternative region format
-        'http://localhost:8080'  # Fixed typo in localhost URL
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com/',
     ]
 else:
     # For development, allow all origins for easier testing
