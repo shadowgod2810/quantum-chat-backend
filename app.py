@@ -43,10 +43,8 @@ if ENVIRONMENT == 'production':
         'https://quantum-chat-ui.netlify.app',
         'https://quantum-chat-ui.onrender.com',
         'https://quantum-chat-app.netlify.app',
-        'http://quantum-chat-ui.s3-website-us-east-1.amazonaws.com',
-        'https://quantum-chat-ui.s3.amazonaws.com',
-        'https://d1234abcd.cloudfront.net',  # Replace with your actual CloudFront domain
-        'https://*.cloudfront.net'  # Allow all CloudFront domains for flexibility
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
+        'http://quantum-chat-frontend.s3-website-ap-south-1.amazonaws.com',
     ]
 else:
     # For development, allow all origins for easier testing

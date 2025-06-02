@@ -1,6 +1,7 @@
 # Monkey patch eventlet at the beginning to avoid runtime errors
 import eventlet
-eventlet.monkey_patch()
+# Only monkey patch what we need to avoid conflicts with gunicorn
+eventlet.monkey_patch(socket=True, select=True, thread=False)
 
 import os
 import re

@@ -3,7 +3,7 @@ services:
     name: quantum-chat-api
     runtime: python
     buildCommand: pip install -r requirements.txt && pip install -e .
-    startCommand: gunicorn --worker-class eventlet -w 1 app:app
+    startCommand: python -m gunicorn --worker-class eventlet -w 1 --timeout 120 --keep-alive 65 --log-level debug app:app
     envVars:
       - key: FLASK_ENV
         value: production
@@ -13,6 +13,10 @@ services:
         generateValue: true
       - key: DATABASE_PATH
         value: /opt/render/project/src/data/backend_database.sqlite
+      - key: PYTHONUNBUFFERED
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "1"
     healthCheckPath: /api/health
     autoDeploy: true
     disk:

@@ -71,10 +71,37 @@ def register_event_handlers(socketio: SocketIO) -> None:
     @socketio.on('authenticate')
     def handle_authentication(data):
         """Handle user authentication"""
+        print(f"Authentication attempt from socket {request.sid}")
+        print(f"Auth data: {data}")
+        
+        # Check if this socket is already authenticated
+        if request.sid in sid_to_user:
+            username = sid_to_user[request.sid]
+            print(f"Socket {request.sid} already authenticated as {username}")
+            emit('authentication_success', {
+                'username': username,
+                'status': 'authenticated',
+                'message': 'Already authenticated'
+            })
+            return
+        
+        # Get session ID from data or from auth header
         session_id = data.get('session_id')
+        if not session_id and 'token' in data:
+            session_id = data.get('token')  # Try alternative key
+        
+        # Check for auth header if not in data
+        if not session_id and request.headers.get('Authorization'):
+            auth_header = request.headers.get('Authorization')
+            if auth_header.startswith('Bearer '):
+                session_id = auth_header.split(' ')[1]
+        
         if not session_id:
+            print(f"No session ID provided for socket {request.sid}")
             emit('authentication_failed', {'message': 'No session ID provided'})
             return
+        
+        print(f"Validating session ID for socket {request.sid}")
         
         # In a real application, you would validate the session ID against your database
         # For this example, we'll use a simple lookup from the session store
@@ -82,10 +109,21 @@ def register_event_handlers(socketio: SocketIO) -> None:
         
         user = get_user_by_session(session_id)
         if not user:
+            print(f"Invalid session ID for socket {request.sid}")
             emit('authentication_failed', {'message': 'Invalid session ID'})
             return
         
         username = user.get('username')
+        print(f"Found user {username} for session ID")
+        
+        # Check if user is already connected with another socket
+        if username in user_to_sid:
+            old_sid = user_to_sid[username]
+            if old_sid != request.sid:
+                print(f"User {username} already connected with socket {old_sid}, updating to {request.sid}")
+                # Remove old socket mapping
+                if old_sid in sid_to_user:
+                    del sid_to_user[old_sid]
         
         # Register this socket with the user
         sid_to_user[request.sid] = username
@@ -98,11 +136,13 @@ def register_event_handlers(socketio: SocketIO) -> None:
         user_rooms[username].add(username)
         
         print(f"User {username} authenticated with socket ID {request.sid}")
+        print(f"Current online users: {list(user_to_sid.keys())}")
         
         # Notify the client of successful authentication
         emit('authentication_success', {
             'username': username,
-            'status': 'authenticated'
+            'status': 'authenticated',
+            'message': 'Authentication successful'
         })
         
         # Notify other users about this user coming online
@@ -117,6 +157,7 @@ def register_event_handlers(socketio: SocketIO) -> None:
         # Check if user is authenticated
         if request.sid not in sid_to_user:
             emit('error', {'message': 'Not authenticated'})
+            print(f"Socket {request.sid} attempted to send message without authentication")
             return
         
         sender_username = sid_to_user[request.sid]
@@ -125,8 +166,12 @@ def register_event_handlers(socketio: SocketIO) -> None:
         client_message_id = data.get('client_message_id')
         timestamp = data.get('timestamp', datetime.datetime.now().isoformat())
         
+        print(f"Received direct message from {sender_username} to {recipient_username}")
+        print(f"Message data: {data}")
+        
         if not recipient_username or not message_content:
             emit('error', {'message': 'Missing recipient or message content'})
+            print(f"Missing data in message: recipient={recipient_username}, content_length={len(message_content) if message_content else 0}")
             return
         
         # Create message object
@@ -144,6 +189,7 @@ def register_event_handlers(socketio: SocketIO) -> None:
         try:
             # Save message to database
             saved_id = save_message(message)
+            print(f"Message saved to database with ID: {saved_id}")
             
             # Send confirmation to sender
             emit('message_sent', {
@@ -153,20 +199,31 @@ def register_event_handlers(socketio: SocketIO) -> None:
                 'timestamp': timestamp,
                 'client_message_id': client_message_id
             })
+            print(f"Sent confirmation to sender {sender_username}")
             
             # Send message to recipient if they're online
             if recipient_username in user_to_sid:
                 recipient_sid = user_to_sid[recipient_username]
+                print(f"Recipient {recipient_username} is online with SID {recipient_sid}")
+                
+                # Send to recipient's room
                 emit('new_message', message, room=recipient_username)
                 print(f"Sent message to {recipient_username} in room {recipient_username}")
+                
+                # Also try sending directly to their socket ID as a fallback
+                emit('new_message', message, to=recipient_sid)
+                print(f"Also sent message directly to recipient's socket ID {recipient_sid}")
             else:
                 print(f"User {recipient_username} is offline, message saved for later delivery")
+                print(f"Current online users: {list(user_to_sid.keys())}")
             
             # Return success response
             emit('direct_message_response', {'success': True, 'message_id': saved_id})
             
         except Exception as e:
             print(f"Error handling direct message: {e}")
+            import traceback
+            traceback.print_exc()
             emit('direct_message_response', {'success': False, 'error': str(e)})
     
     @socketio.on('get_message_history')
