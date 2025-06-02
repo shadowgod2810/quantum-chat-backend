@@ -34,54 +34,51 @@ DEV_MODE = os.environ.get('DEV_MODE', 'False').lower() == 'true'
 # Set environment
 ENVIRONMENT = os.environ.get('FLASK_ENV', 'development')  # Default to development mode for easier testing
 
-# Define allowed origins based on environment
+# Define allowed origins for CORS
 if ENVIRONMENT == 'production':
-    # In production, CORS configuration - Allow specific origins in production, all in development
+    # In production, we'll use a specific list of allowed origins
     allowed_origins = [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:3000',
-        'https://quantum-chat-frontend.netlify.app',
-        'https://quantum-chat-frontend.vercel.app',
+        # S3 frontend URLs with various formats
         'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
-        'http://quantum-chat-frontend.s3-website-ap-south-1.amazonaws.com',
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com/',
         'http://quantum-chat-frontend.s3.amazonaws.com',
         'http://quantum-chat-frontend.s3.ap-south-1.amazonaws.com',
+        'https://quantum-chat-frontend.s3.amazonaws.com',
+        'https://quantum-chat-frontend.s3.ap-south-1.amazonaws.com',
+        'https://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
+        'https://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com/',
+        # Other production frontends
+        'https://quantum-chat.netlify.app',
+        'https://quantum-chat-app.vercel.app',
+        # Same origin requests
+        'https://quantum-chat-api.onrender.com',
+        'https://quantum-chat-api.onrender.com/'
     ]
     
-    # Add the exact URL from the .env.production file to ensure it matches
-    # This is the URL that the frontend is actually using
+    # Try to load frontend URL from .env.production if it exists
     try:
-        with open('.env.production', 'r') as f:
-            for line in f:
-                if line.startswith('VITE_APP_WEBSITE_URL='):
-                    website_url = line.strip().split('=', 1)[1]
-                    if website_url and website_url not in allowed_origins:
-                        allowed_origins.append(website_url)
-                        print(f"Added website URL from .env.production: {website_url}")
-                    break
-    except FileNotFoundError:
-        print("Warning: .env.production file not found. Using predefined allowed origins.")
-        # Add common S3 bucket URL formats as fallback
-        s3_bucket_name = "quantum-chat-frontend"
-        s3_region = "ap-south-1"
-        s3_urls = [
-            f"http://{s3_bucket_name}.s3-website.{s3_region}.amazonaws.com",
-            f"http://{s3_bucket_name}.s3-website-{s3_region}.amazonaws.com",
-            f"http://{s3_bucket_name}.s3.{s3_region}.amazonaws.com",
-            f"http://{s3_bucket_name}.s3.amazonaws.com"
-        ]
-        for url in s3_urls:
-            if url not in allowed_origins:
-                allowed_origins.append(url)
-                print(f"Added fallback S3 URL: {url}")
+        from dotenv import load_dotenv
+        load_dotenv('.env.production')
+        frontend_url = os.environ.get('FRONTEND_URL') or os.environ.get('VITE_APP_WEBSITE_URL')
+        if frontend_url and frontend_url not in allowed_origins:
+            allowed_origins.append(frontend_url)
+            app.logger.info(f"Added frontend URL from .env.production: {frontend_url}")
     except Exception as e:
-        print(f"Error reading .env.production file: {e}")
-        # Continue with predefined allowed origins
-else:
-    # For development, allow all origins for easier testing
+        app.logger.warning(f"Could not load .env.production file: {e}")
+        app.logger.info("Using predefined allowed origins.")
+    
+    # Log all allowed origins for debugging
+    app.logger.info(f"Production mode: Allowed origins: {allowed_origins}")
+    
+    # IMPORTANT: For testing, temporarily allow all origins
+    # This is a temporary fix to debug the CORS issues
+    # Remove this in final production deployment
     allowed_origins = '*'
+    app.logger.warning("TEMPORARY OVERRIDE: Allowing all origins in production for debugging")
+else:
+    # In development, allow all origins with wildcard
+    allowed_origins = '*'
+    app.logger.info("Development mode: Allowing all origins with wildcard (*)")
 
 # Configure Flask app
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
@@ -170,45 +167,33 @@ def add_cors_headers(response):
     if not origin:
         return response
     
-    # Set CORS headers based on environment
-    if ENVIRONMENT == 'production':
-        # Check if the origin is in our allowed list
+    # Since we're using wildcard '*' for allowed_origins in both environments temporarily,
+    # we'll set the CORS headers accordingly
+    if allowed_origins == '*':
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        app.logger.info(f"Allowing all origins with wildcard (*) for request from: {origin}")
+    else:
+        # This block is for when we switch back to specific origins
         if origin in allowed_origins:
             response.headers['Access-Control-Allow-Origin'] = origin
-            app.logger.info(f"Allowed CORS for origin: {origin}")
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+            app.logger.info(f"Allowed CORS for specific origin: {origin}")
         else:
-            # Log the rejected origin for debugging
             app.logger.warning(f"Rejected CORS request from origin: {origin} - not in allowed list")
-            # Don't set the CORS header if origin is not allowed
-            # This will cause the browser to reject the response
-            # We'll return the response as is
             return response
-    else:
-        # In development, allow all origins
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        app.logger.info(f"Development mode: Allowed CORS for all origins")
     
     # Set standard CORS headers
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Auth-Token'
     
-    # Handle credentials - only set to true in production for specific allowed origins
-    # In development mode, we use * which doesn't work with credentials
-    if ENVIRONMENT == 'production' and origin in allowed_origins:
-        response.headers['Access-Control-Allow-Credentials'] = 'true'
-        app.logger.info(f"Setting Allow-Credentials: true for origin: {origin}")
-    elif ENVIRONMENT != 'production':
-        # In development, we don't use credentials with wildcard origins
-        app.logger.info(f"Development mode: Not setting Allow-Credentials for wildcard origin")
-    
     # Cache preflight requests
     response.headers['Access-Control-Max-Age'] = '3600'
     
-    # Log the full set of CORS headers being returned
+    # Log headers for debugging
     cors_headers = {k: v for k, v in response.headers.items() if k.startswith('Access-Control')}
     app.logger.info(f"CORS headers set: {cors_headers}")
     
-    # For OPTIONS requests (preflight), return immediately
+    # Handle OPTIONS requests (preflight) specially
     if request.method == 'OPTIONS':
         app.logger.info(f"Responding to preflight OPTIONS request from {origin}")
         return response
