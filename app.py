@@ -52,14 +52,33 @@ if ENVIRONMENT == 'production':
     
     # Add the exact URL from the .env.production file to ensure it matches
     # This is the URL that the frontend is actually using
-    with open('.env.production', 'r') as f:
-        for line in f:
-            if line.startswith('VITE_APP_WEBSITE_URL='):
-                website_url = line.strip().split('=', 1)[1]
-                if website_url and website_url not in allowed_origins:
-                    allowed_origins.append(website_url)
-                    print(f"Added website URL from .env.production: {website_url}")
-                break
+    try:
+        with open('.env.production', 'r') as f:
+            for line in f:
+                if line.startswith('VITE_APP_WEBSITE_URL='):
+                    website_url = line.strip().split('=', 1)[1]
+                    if website_url and website_url not in allowed_origins:
+                        allowed_origins.append(website_url)
+                        print(f"Added website URL from .env.production: {website_url}")
+                    break
+    except FileNotFoundError:
+        print("Warning: .env.production file not found. Using predefined allowed origins.")
+        # Add common S3 bucket URL formats as fallback
+        s3_bucket_name = "quantum-chat-frontend"
+        s3_region = "ap-south-1"
+        s3_urls = [
+            f"http://{s3_bucket_name}.s3-website.{s3_region}.amazonaws.com",
+            f"http://{s3_bucket_name}.s3-website-{s3_region}.amazonaws.com",
+            f"http://{s3_bucket_name}.s3.{s3_region}.amazonaws.com",
+            f"http://{s3_bucket_name}.s3.amazonaws.com"
+        ]
+        for url in s3_urls:
+            if url not in allowed_origins:
+                allowed_origins.append(url)
+                print(f"Added fallback S3 URL: {url}")
+    except Exception as e:
+        print(f"Error reading .env.production file: {e}")
+        # Continue with predefined allowed origins
 else:
     # For development, allow all origins for easier testing
     allowed_origins = '*'
