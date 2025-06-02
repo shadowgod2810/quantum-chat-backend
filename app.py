@@ -190,13 +190,28 @@ def add_cors_headers(response):
     
     # Set standard CORS headers
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Auth-Token'
     
-    # Handle credentials
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    # Handle credentials - only set to true in production for specific allowed origins
+    # In development mode, we use * which doesn't work with credentials
+    if ENVIRONMENT == 'production' and origin in allowed_origins:
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        app.logger.info(f"Setting Allow-Credentials: true for origin: {origin}")
+    elif ENVIRONMENT != 'production':
+        # In development, we don't use credentials with wildcard origins
+        app.logger.info(f"Development mode: Not setting Allow-Credentials for wildcard origin")
     
     # Cache preflight requests
     response.headers['Access-Control-Max-Age'] = '3600'
+    
+    # Log the full set of CORS headers being returned
+    cors_headers = {k: v for k, v in response.headers.items() if k.startswith('Access-Control')}
+    app.logger.info(f"CORS headers set: {cors_headers}")
+    
+    # For OPTIONS requests (preflight), return immediately
+    if request.method == 'OPTIONS':
+        app.logger.info(f"Responding to preflight OPTIONS request from {origin}")
+        return response
     
     # Log headers for debugging
     app.logger.debug(f"CORS headers set: {dict(response.headers)}")

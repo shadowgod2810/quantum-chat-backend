@@ -15,10 +15,20 @@ user_rooms: Dict[str, Set[str]] = {}  # Maps username to set of rooms they're in
 def init_socketio(app: Flask) -> SocketIO:
     """Initialize and configure the Socket.IO server"""
     # Get environment setting from app
-    environment = app.config.get('ENV', 'development')
+    environment = os.environ.get('FLASK_ENV', 'development')
     
-    # Get allowed origins from app
-    allowed_origins = app.config.get('ALLOWED_ORIGINS', '*')
+    # Access the global allowed_origins variable directly from the app module
+    # This ensures we're using the same origins as the main Flask app
+    import sys
+    main_module = sys.modules['__main__']
+    
+    if hasattr(main_module, 'allowed_origins'):
+        allowed_origins = main_module.allowed_origins
+        print(f"Using allowed_origins from main module: {allowed_origins}")
+    else:
+        # Fallback to development mode (allow all origins)
+        allowed_origins = '*'
+        print("Warning: Could not find allowed_origins in main module, defaulting to '*'")
     
     # Configure Socket.IO with optimized settings
     socketio = SocketIO(
@@ -29,8 +39,18 @@ def init_socketio(app: Flask) -> SocketIO:
         async_mode='eventlet',  # Use eventlet for best performance
         logger=True,  # Enable logging for debugging
         engineio_logger=True,  # Enable engine.io logging
-        cookie=False  # Disable cookies to avoid CORS issues
+        cookie=False,  # Disable cookies to avoid CORS issues
+        cors_credentials=True  # Allow credentials for authenticated origins
     )
+    
+    # Log detailed configuration
+    print(f"Socket.IO CORS configuration:")
+    print(f" - Allowed origins: {allowed_origins}")
+    print(f" - CORS credentials: True")
+    print(f" - Cookie: False")
+    print(f" - Async mode: {socketio.async_mode}")
+    print(f" - Ping timeout: 120s")
+    print(f" - Ping interval: 15s")
     
     print(f"Socket.IO initialized with CORS allowed origins: {allowed_origins}")
     print(f"Environment: {environment}")
