@@ -519,49 +519,71 @@ def health_check():
 @app.route('/api/login', methods=['POST'])
 def login():
     app.logger.critical("--- /api/login ROUTE HIT ---")
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-
-    if not username or not password:
-        return jsonify({'error': 'Username and password are required'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    app.logger.info(f"Request headers: {dict(request.headers)}")
+    app.logger.info(f"Request method: {request.method}")
+    app.logger.info(f"Request content type: {request.content_type}")
     
-    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
-    user_record = cursor.fetchone()
+    try:
+        data = request.json
+        app.logger.info(f"Request data: {data}")
+        username = data.get('username')
+        password = data.get('password')
 
-    print(f"Login attempt for username: {username}") # Debug
-    # print(f"Password received for {username}: {password}") # SECURITY RISK - DEBUG ONLY
-    input_password_hash = hash_password(password)
-    print(f"Hash of input password: {input_password_hash}") # Debug
+        if not username or not password:
+            app.logger.warning("Missing username or password in request")
+            return jsonify({'error': 'Username and password are required'}), 400
+    except Exception as e:
+        app.logger.error(f"Exception parsing request data: {str(e)}")
+        return jsonify({'error': f'Invalid request data: {str(e)}'}), 400
 
-    if user_record:
-        print(f"Stored hash for user: {user_record['password_hash']}") # Debug
-        if verify_password(user_record['password_hash'], password):
-            session_id = secrets.token_hex(16)
-            cursor.execute("INSERT OR REPLACE INTO sessions (session_id, username) VALUES (?, ?)", (session_id, username))
-            conn.commit()
-            print(f"Login successful for {username}") # Debug
-            conn.close() # Close connection on successful login
-            return jsonify({
-                'message': 'Login successful',
-                'session_id': session_id,
-                'username': user_record['username'], 
-                'email': user_record['email'],     
-                'public_key': user_record['kem_public_key'],
-                'sign_public_key': user_record['dss_public_key']
-            })
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        app.logger.info(f"Executing database query for username: {username}")
+        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        user_record = cursor.fetchone()
+
+        app.logger.info(f"Login attempt for username: {username}")
+        # Do not log passwords in production
+        input_password_hash = hash_password(password)
+        app.logger.debug(f"Hash of input password: {input_password_hash}")
+
+        if user_record:
+            app.logger.debug(f"User record found for: {username}")
+            if verify_password(user_record['password_hash'], password):
+                session_id = secrets.token_hex(16)
+                app.logger.info(f"Generated session_id: {session_id} for user: {username}")
+                cursor.execute("INSERT OR REPLACE INTO sessions (session_id, username) VALUES (?, ?)", (session_id, username))
+                conn.commit()
+                app.logger.info(f"Login successful for {username}")
+                conn.close() # Close connection on successful login
+                
+                response_data = {
+                    'message': 'Login successful',
+                    'session_id': session_id,
+                    'username': user_record['username'], 
+                    'email': user_record['email'],     
+                    'public_key': user_record['kem_public_key'],
+                    'sign_public_key': user_record['dss_public_key']
+                }
+                app.logger.info(f"Sending successful login response for {username}")
+                return jsonify(response_data)
+            else:
+                app.logger.warning(f"Login failed for {username}. Invalid password.")
+                conn.close()
+                return jsonify({'error': 'Invalid username or password'}), 401
         else:
-            print(f"Login failed for {username}. User record found: {bool(user_record)}") # Debug
+            # This case implies user_record was None (user not found)
+            app.logger.warning(f"Login failed for {username}. User not found.")
             conn.close()
             return jsonify({'error': 'Invalid username or password'}), 401
-    else:
-        # This case implies user_record was None (user not found)
-        print(f"Login failed for {username}. User not found.") # Debug
-        conn.close()
-        return jsonify({'error': 'Invalid username or password'}), 401
+    except Exception as e:
+        app.logger.error(f"Exception in login endpoint: {str(e)}")
+        # Make sure to close the connection if it was opened
+        if 'conn' in locals():
+            conn.close()
+        return jsonify({'error': f'Server error: {str(e)}'}), 500
 
 
 @app.route('/api/logout', methods=['POST'])
