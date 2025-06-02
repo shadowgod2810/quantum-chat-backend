@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: quantum-chat-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt && pip install -e .
+    startCommand: python server.py
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: DEV_MODE
+        value: "false"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_PATH
+        value: /opt/render/project/src/data/backend_database.sqlite
+      - key: PYTHONUNBUFFERED
+        value: "true"
+      - key: WEB_CONCURRENCY
+        value: "1"
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1

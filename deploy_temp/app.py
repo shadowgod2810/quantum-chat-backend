@@ -41,7 +41,16 @@ if ENVIRONMENT == 'production':
     allowed_origins = [
         'https://quantum-chat.netlify.app',
         'https://quantum-chat.vercel.app',
-        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com/',
+        'https://quantum-chat-ui.netlify.app',
+        'https://quantum-chat-ui.onrender.com',
+        'https://quantum-chat-app.netlify.app',
+        # S3 website URLs - include all possible formats
+        'http://quantum-chat-frontend.s3-website-ap-south-1.amazonaws.com',
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
+        'http://quantum-chat-frontend.s3.amazonaws.com',
+        'http://quantum-chat-frontend.s3.ap-south-1.amazonaws.com',
+        # Include the exact URL used in the frontend
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
     ]
 else:
     # For development, allow all origins for easier testing
@@ -121,6 +130,9 @@ def get_user_by_session(session_id):
 from src.socket_server import init_socketio
 socketio = init_socketio(app)
 
+# Export socketio instance for server.py
+__all__ = ['app', 'socketio']
+
 # Disable Flask-CORS and implement a more direct approach
 # This ensures all origins are allowed, especially for development
 
@@ -129,22 +141,29 @@ def add_cors_headers(response):
     # Get the origin from the request
     origin = request.headers.get('Origin')
     
-    if origin:
-        # In production, check if origin is in allowed list
-        if ENVIRONMENT == 'production':
-            if origin in allowed_origins:
-                response.headers['Access-Control-Allow-Origin'] = origin
-            else:
-                # Log the rejected origin for debugging
-                app.logger.warning(f"Rejected CORS request from origin: {origin}")
-                response.headers['Access-Control-Allow-Origin'] = allowed_origins[0]
-        else:
-            # In development, allow any origin
-            response.headers['Access-Control-Allow-Origin'] = origin
-    else:
-        # No origin in request, use wildcard in development or first allowed in production
-        response.headers['Access-Control-Allow-Origin'] = '*' if ENVIRONMENT == 'development' else allowed_origins[0]
+    # If no origin in request, return response as is
+    if not origin:
+        return response
     
+    # Set CORS headers based on environment
+    if ENVIRONMENT == 'production':
+        # Check if the origin is in our allowed list
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            app.logger.info(f"Allowed CORS for origin: {origin}")
+        else:
+            # Log the rejected origin for debugging
+            app.logger.warning(f"Rejected CORS request from origin: {origin} - not in allowed list")
+            # Don't set the CORS header if origin is not allowed
+            # This will cause the browser to reject the response
+            # We'll return the response as is
+            return response
+    else:
+        # In development, allow all origins
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        app.logger.info(f"Development mode: Allowed CORS for all origins")
+    
+    # Set standard CORS headers
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
     
@@ -154,9 +173,8 @@ def add_cors_headers(response):
     # Cache preflight requests
     response.headers['Access-Control-Max-Age'] = '3600'
     
-    # Log headers for debugging in development
-    if ENVIRONMENT == 'development' or DEV_MODE:
-        app.logger.debug(f"CORS headers set: {dict(response.headers)}")
+    # Log headers for debugging
+    app.logger.debug(f"CORS headers set: {dict(response.headers)}")
     
     return response
 

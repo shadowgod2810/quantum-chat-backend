@@ -39,6 +39,7 @@ if ENVIRONMENT == 'production':
     # In production, we'll use a specific list of allowed origins
     allowed_origins = [
         # S3 frontend URLs with various formats
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com/',
         'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
         'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com/',
         'http://quantum-chat-frontend.s3.amazonaws.com',
