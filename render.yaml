@@ -3,7 +3,7 @@ services:
     name: quantum-chat-api
     runtime: python
     buildCommand: pip install -r requirements.txt && pip install -e .
-    startCommand: python -m gunicorn --worker-class eventlet -w 1 --timeout 120 --keep-alive 65 --log-level debug app:app
+    startCommand: python server.py
     envVars:
       - key: FLASK_ENV
         value: production

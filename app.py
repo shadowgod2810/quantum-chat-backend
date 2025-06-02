@@ -36,20 +36,30 @@ ENVIRONMENT = os.environ.get('FLASK_ENV', 'development')  # Default to developme
 
 # Define allowed origins based on environment
 if ENVIRONMENT == 'production':
-    # In production, specify exact allowed origins
+    # In production, CORS configuration - Allow specific origins in production, all in development
     allowed_origins = [
-        'https://quantum-chat.netlify.app',
-        'https://quantum-chat.vercel.app',
-        'https://quantum-chat-ui.netlify.app',
-        'https://quantum-chat-ui.onrender.com',
-        'https://quantum-chat-app.netlify.app',
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:3000',
+        'https://quantum-chat-frontend.netlify.app',
+        'https://quantum-chat-frontend.vercel.app',
         'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
         'http://quantum-chat-frontend.s3-website-ap-south-1.amazonaws.com',
-        'http://quantum-chat-frontend.s3-website.us-east-1.amazonaws.com',
-        'http://quantum-chat-frontend.s3-website-us-east-1.amazonaws.com',
         'http://quantum-chat-frontend.s3.amazonaws.com',
         'http://quantum-chat-frontend.s3.ap-south-1.amazonaws.com',
     ]
+    
+    # Add the exact URL from the .env.production file to ensure it matches
+    # This is the URL that the frontend is actually using
+    with open('.env.production', 'r') as f:
+        for line in f:
+            if line.startswith('VITE_APP_WEBSITE_URL='):
+                website_url = line.strip().split('=', 1)[1]
+                if website_url and website_url not in allowed_origins:
+                    allowed_origins.append(website_url)
+                    print(f"Added website URL from .env.production: {website_url}")
+                break
 else:
     # For development, allow all origins for easier testing
     allowed_origins = '*'
@@ -126,25 +136,40 @@ def get_user_by_session(session_id):
 from src.socket_server import init_socketio
 socketio = init_socketio(app)
 
+# Export socketio instance for server.py
+__all__ = ['app', 'socketio']
+
 # Disable Flask-CORS and implement a more direct approach
 # This ensures all origins are allowed, especially for development
 
 @app.after_request
 def add_cors_headers(response):
     # Get the origin from the request
-    origin = request.headers.get('Origin', '*')
+    origin = request.headers.get('Origin')
+    
+    # If no origin in request, return response as is
+    if not origin:
+        return response
     
     # Set CORS headers based on environment
     if ENVIRONMENT == 'production':
         # Check if the origin is in our allowed list
-        if origin in allowed_origins or any(origin.endswith(domain.replace('*', '')) for domain in allowed_origins if '*' in domain):
+        if origin in allowed_origins:
             response.headers['Access-Control-Allow-Origin'] = origin
+            app.logger.info(f"Allowed CORS for origin: {origin}")
         else:
-            # Default to the first allowed origin if the incoming origin is not allowed
-            response.headers['Access-Control-Allow-Origin'] = allowed_origins[0]
+            # Log the rejected origin for debugging
+            app.logger.warning(f"Rejected CORS request from origin: {origin} - not in allowed list")
+            # Don't set the CORS header if origin is not allowed
+            # This will cause the browser to reject the response
+            # We'll return the response as is
+            return response
     else:
         # In development, allow all origins
         response.headers['Access-Control-Allow-Origin'] = '*'
+        app.logger.info(f"Development mode: Allowed CORS for all origins")
+    
+    # Set standard CORS headers
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization'
     
@@ -153,6 +178,9 @@ def add_cors_headers(response):
     
     # Cache preflight requests
     response.headers['Access-Control-Max-Age'] = '3600'
+    
+    # Log headers for debugging
+    app.logger.debug(f"CORS headers set: {dict(response.headers)}")
     
     return response
 
