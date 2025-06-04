@@ -218,20 +218,28 @@ def init_socketio(app: Flask, get_user_by_session_func, user_sessions_ref, app_l
         # Fallback to development mode (allow all origins) or if not found
         app_logger_ref.warning("Could not find allowed_origins in main module or __main__ not found, defaulting to '*' for Socket.IO")
 
+    # Define Socket.IO ping parameters with default values
+    sio_ping_timeout = 20  # Default for python-engineio pingTimeout
+    sio_ping_interval = 25 # Default for python-engineio pingInterval
+
+    # Optional: Allow overriding from app.config if needed in the future
+    # if app and hasattr(app, 'config'):
+    #     sio_ping_timeout = app.config.get('SOCKETIO_PING_TIMEOUT', sio_ping_timeout)
+    #     sio_ping_interval = app.config.get('SOCKETIO_PING_INTERVAL', sio_ping_interval)
+
     socketio_instance = SocketIO(
         app,
-        cors_allowed_origins=allowed_origins_val,
-        ping_timeout=120,
-        ping_interval=15,
         async_mode='eventlet',
-        logger=True, # Set to False in production for less noise if desired
-        engineio_logger=True, # Set to False in production
+        cors_allowed_origins=allowed_origins_val,
+        ping_timeout=sio_ping_timeout,      # Pass defined value
+        ping_interval=sio_ping_interval,    # Pass defined value
         cookie=False,
         cors_credentials=True
     )
     
     app_logger_ref.info(f"Socket.IO CORS configuration: Allowed origins: {allowed_origins_val}, Credentials: True, Cookie: False")
-    app_logger_ref.info(f"Socket.IO initialized: Async mode: {socketio_instance.async_mode}, Ping: {socketio_instance.ping_timeout}s/{socketio_instance.ping_interval}s, Env: {environment}")
+    # Use the defined variables for logging
+    app_logger_ref.info(f"Socket.IO initialized: Async mode: {socketio_instance.async_mode}, Ping: {sio_ping_timeout}s/{sio_ping_interval}s, Env: {environment}")
     
     # Pass the necessary functions and references to the top-level event handlers function
     register_event_handlers(socketio_instance, get_user_by_session_func, user_sessions_ref, app_logger_ref)
@@ -244,7 +252,8 @@ def register_event_handlers(socketio: SocketIO, get_user_by_session_func, user_s
     app_logger_ref.info("Registering Socket.IO event handlers...")
 
     @socketio.on('connect')
-    def handle_connect():
+    def handle_connect(auth=None):
+        app_logger_ref.info(f"!!! Connection attempt received from SID: {request.sid} with auth: {auth}") # ADD THIS LINE
         app_logger_ref.info(f"Client connected: {request.sid}")
         emit('connection_established', {'sid': request.sid, 'status': 'connected'}, room=request.sid)
         # Send the current user list to the newly connected client
