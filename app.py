@@ -86,86 +86,85 @@ else:
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev_secret_key_change_in_production')
 
 # User session storage - in production this would be in Redis or another persistent store
-user_sessions = {}
+user_sessions = {} # In-memory cache for user sessions
+
+# Top-level helper function to fetch user data from DB
+# This function performs blocking I/O.
+def fetch_user_from_db(session_id, db_connection_func, app_logger, user_sessions_cache):
+    """Fetch user data from database. THIS IS BLOCKING."""
+    try:
+        conn = db_connection_func()
+        cursor = conn.cursor()
+        
+        cursor.execute(
+            "SELECT username, expires_at FROM sessions WHERE session_id = ?", 
+            (session_id,)
+        )
+        session_data = cursor.fetchone()
+        
+        if not session_data:
+            conn.close()
+            return None
+            
+        username, expires_at = session_data
+        
+        if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
+            cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+            conn.commit()
+            conn.close()
+            user_sessions_cache.pop(session_id, None) # Remove from cache too
+            return None
+        
+        cursor.execute(
+            "SELECT username, email, kem_public_key, dss_public_key FROM users WHERE username = ?", 
+            (username,)
+        )
+        user_data_row = cursor.fetchone()
+        conn.close()
+        
+        if not user_data_row:
+            return None
+            
+        user = {
+            'username': user_data_row['username'],
+            'email': user_data_row['email'],
+            'kem_public_key': user_data_row['kem_public_key'],
+            'dss_public_key': user_data_row['dss_public_key']
+        }
+        
+        user_sessions_cache[session_id] = user # Update cache
+        return user
+    except Exception as e:
+        app_logger.error(f"Error in fetch_user_from_db: {e}")
+        return None
 
 # Function to get user by session ID
+# IMPORTANT: This function is BLOCKING. Socket.IO handlers must spawn calls to it.
 def get_user_by_session(session_id):
+    """Get user data by session ID. THIS IS BLOCKING."""
     """Get user data by session ID"""
     if not session_id:
         return None
         
     # First check in-memory cache
-    if session_id in user_sessions:
+    if session_id in user_sessions: # user_sessions is the global cache from app.py
         return user_sessions[session_id]
     
-    # Define a function to run in a separate thread to avoid blocking the eventlet mainloop
-    def fetch_user_from_db(session_id):
-        try:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            
-            # Get session from database
-            cursor.execute(
-                "SELECT username, expires_at FROM sessions WHERE session_id = ?", 
-                (session_id,)
-            )
-            session_data = cursor.fetchone()
-            
-            if not session_data:
-                conn.close()
-                return None
-                
-            username, expires_at = session_data
-            
-            # Check if session has expired
-            if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
-                # Session expired, remove it
-                cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-                conn.commit()
-                conn.close()
-                return None
-            
-            # Get user data
-            cursor.execute(
-                "SELECT username, email, kem_public_key, dss_public_key FROM users WHERE username = ?", 
-                (username,)
-            )
-            user_data = cursor.fetchone()
-            conn.close()
-            
-            if not user_data:
-                return None
-                
-            # Create user object
-            user = {
-                'username': user_data[0],
-                'email': user_data[1],
-                'kem_public_key': user_data[2],
-                'dss_public_key': user_data[3]
-            }
-            
-            # Cache in memory
-            user_sessions[session_id] = user
-            
-            return user
-        except Exception as e:
-            app.logger.error(f"Error getting user by session: {e}")
-            return None
-    
-    # For Socket.IO authentication, use a non-blocking approach
-    if 'eventlet' in sys.modules and hasattr(eventlet, 'spawn'):
-        # Check if this is being called from a Socket.IO context
-        if hasattr(request, 'namespace') and hasattr(request, 'sid'):
-            app.logger.info(f"Using non-blocking database access for Socket.IO authentication")
-            # Use eventlet's spawn to run the database query in a separate greenlet
-            return eventlet.spawn(fetch_user_from_db, session_id).wait()
-    
-    # For regular HTTP requests, we can use the blocking approach
-    return fetch_user_from_db(session_id)
+    # If not in cache, fetch from DB. This is a blocking call.
+    # app.logger and get_db_connection are available from app.py's context.
+    # user_sessions is the global cache.
+    # Call the top-level fetch_user_from_db function
+    return fetch_user_from_db(session_id, get_db_connection, app.logger, user_sessions)
 
 # Initialize Socket.IO with the app
 from src.socket_server import init_socketio
-socketio = init_socketio(app)
+# Pass app, and references to functions/data needed by socket_server
+socketio = init_socketio(
+    app=app, 
+    get_user_by_session_func=get_user_by_session, 
+    user_sessions_ref=user_sessions, # Pass the cache reference
+    app_logger_ref=app.logger # Pass logger reference
+)
 
 # Export socketio instance for server.py
 __all__ = ['app', 'socketio']

@@ -45,6 +45,7 @@ if ENVIRONMENT == 'production':
         'https://quantum-chat-ui.onrender.com',
         'https://quantum-chat-app.netlify.app',
         # S3 website URLs - include all possible formats
+        'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
         'http://quantum-chat-frontend.s3-website-ap-south-1.amazonaws.com',
         'http://quantum-chat-frontend.s3-website.ap-south-1.amazonaws.com',
         'http://quantum-chat-frontend.s3.amazonaws.com',
