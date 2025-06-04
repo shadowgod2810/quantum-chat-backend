@@ -195,7 +195,7 @@ def mark_messages_as_read(username: str, other_username: str) -> int:
 
 def get_recent_conversations(username: str, limit: int = 20) -> List[Dict[str, Any]]:
     """
-    Get a list of recent conversations for a user
+    Get a list of recent conversations for a user using an optimized query.
     
     Args:
         username: The username to get conversations for
@@ -203,63 +203,108 @@ def get_recent_conversations(username: str, limit: int = 20) -> List[Dict[str, A
         
     Returns:
         List of conversation dictionaries with last message and unread count
+
+    Raises:
+        sqlite3.Error: If a database error occurs.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    try:
-        # First, get all unique conversation partners
-        cursor.execute('''
-        SELECT DISTINCT 
-            CASE 
-                WHEN sender_username = ? THEN recipient_username 
-                ELSE sender_username 
-            END as partner
+    # This query uses CTEs to first identify all messages involving the user,
+    # then ranks them per conversation partner to find the latest message.
+    # It also calculates unread counts from each partner to the current user.
+    # Finally, it joins these results to present a list of recent conversations.
+    query = """
+    WITH UserMessages AS (
+        SELECT
+            id,
+            sender_username,
+            recipient_username,
+            CASE
+                WHEN sender_username = :current_user THEN recipient_username
+                ELSE sender_username
+            END AS partner_username,
+            content,
+            timestamp,
+            is_read,
+            client_message_id, 
+            signature,
+            ROW_NUMBER() OVER (PARTITION BY
+                CASE
+                    WHEN sender_username = :current_user THEN recipient_username
+                    ELSE sender_username
+                END
+                ORDER BY timestamp DESC
+            ) as rn
         FROM messages
-        WHERE sender_username = ? OR recipient_username = ?
-        ''', (username, username, username))
+        WHERE sender_username = :current_user OR recipient_username = :current_user
+    ),
+    LastMessageDetails AS (
+        SELECT
+            id,
+            sender_username,
+            recipient_username,
+            partner_username,
+            content,
+            timestamp,
+            client_message_id, 
+            signature
+        FROM UserMessages
+        WHERE rn = 1
+    ),
+    UnreadCounts AS (
+        SELECT
+            sender_username AS partner_username,
+            COUNT(*) AS unread_count
+        FROM messages
+        WHERE recipient_username = :current_user AND is_read = 0
+        GROUP BY sender_username
+    )
+    SELECT
+        lmd.partner_username AS partner,
+        lmd.id AS last_message_id,
+        lmd.sender_username AS last_message_sender,
+        lmd.recipient_username AS last_message_recipient,
+        lmd.content AS last_message_content,
+        lmd.timestamp AS last_message_timestamp,
+        lmd.client_message_id AS last_message_client_id,
+        lmd.signature AS last_message_signature,
+        COALESCE(uc.unread_count, 0) AS unread_count
+    FROM LastMessageDetails lmd
+    LEFT JOIN UnreadCounts uc ON lmd.partner_username = uc.partner_username
+    ORDER BY lmd.timestamp DESC
+    LIMIT :limit_val;
+    """
+    
+    conversations_result = []
+    try:
+        cursor.execute(query, {"current_user": username, "limit_val": limit})
+        rows = cursor.fetchall()
         
-        partners = [row['partner'] for row in cursor.fetchall()]
-        
-        # For each partner, get the most recent message and unread count
-        conversations = []
-        for partner in partners:
-            # Get the most recent message
-            cursor.execute('''
-            SELECT * FROM messages
-            WHERE (sender_username = ? AND recipient_username = ?) 
-               OR (sender_username = ? AND recipient_username = ?)
-            ORDER BY timestamp DESC
-            LIMIT 1
-            ''', (username, partner, partner, username))
-            
-            last_message = dict(cursor.fetchone())
-            
-            # Get unread count
-            cursor.execute('''
-            SELECT COUNT(*) as unread_count
-            FROM messages
-            WHERE sender_username = ? AND recipient_username = ? AND is_read = 0
-            ''', (partner, username))
-            
-            unread_count = cursor.fetchone()['unread_count']
-            
-            conversations.append({
-                'partner': partner,
-                'last_message': last_message,
-                'unread_count': unread_count,
-                'timestamp': last_message['timestamp']
+        for row in rows:
+            row_dict = dict(row) 
+            conversations_result.append({
+                'partner': row_dict['partner'],
+                'last_message': {
+                    'id': row_dict['last_message_id'],
+                    'sender_username': row_dict['last_message_sender'],
+                    'recipient_username': row_dict['last_message_recipient'],
+                    'content': row_dict['last_message_content'],
+                    'timestamp': row_dict['last_message_timestamp'],
+                    'client_message_id': row_dict['last_message_client_id'],
+                    'signature': row_dict['last_message_signature'],
+                    # 'is_read' for the last message itself could be added if needed from LastMessageDetails
+                },
+                'unread_count': row_dict['unread_count'],
+                'timestamp': row_dict['last_message_timestamp'] # For client-side sorting if SQL order is not preserved
             })
-        
-        # Sort by timestamp (most recent first)
-        conversations.sort(key=lambda x: x['timestamp'], reverse=True)
-        
-        return conversations[:limit]
+        return conversations_result
     except sqlite3.Error as e:
-        print(f"Database error: {e}")
-        return []
+        # Re-raise the exception for the caller to handle and log with more context
+        raise e 
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def mark_message_as_read(message_id: str) -> bool:
     """
