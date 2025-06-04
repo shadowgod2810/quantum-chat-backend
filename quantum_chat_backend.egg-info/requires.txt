@@ -1,0 +1,9 @@
+flask
+flask-socketio
+flask-cors
+quantcrypt
+cryptography
+eventlet
+gunicorn
+bcrypt
+python-dotenv

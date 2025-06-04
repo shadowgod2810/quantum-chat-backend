@@ -3,6 +3,7 @@ import eventlet
 eventlet.monkey_patch()
 
 import os
+import sys
 import re
 import json
 import uuid
@@ -97,57 +98,70 @@ def get_user_by_session(session_id):
     if session_id in user_sessions:
         return user_sessions[session_id]
     
-    # If not in memory, check the database
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Get session from database
-        cursor.execute(
-            "SELECT username, expires_at FROM sessions WHERE session_id = ?", 
-            (session_id,)
-        )
-        session_data = cursor.fetchone()
-        
-        if not session_data:
-            return None
+    # Define a function to run in a separate thread to avoid blocking the eventlet mainloop
+    def fetch_user_from_db(session_id):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
             
-        username, expires_at = session_data
-        
-        # Check if session has expired
-        if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
-            # Session expired, remove it
-            cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
-            conn.commit()
+            # Get session from database
+            cursor.execute(
+                "SELECT username, expires_at FROM sessions WHERE session_id = ?", 
+                (session_id,)
+            )
+            session_data = cursor.fetchone()
+            
+            if not session_data:
+                conn.close()
+                return None
+                
+            username, expires_at = session_data
+            
+            # Check if session has expired
+            if expires_at and datetime.fromisoformat(expires_at) < datetime.now():
+                # Session expired, remove it
+                cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+                conn.commit()
+                conn.close()
+                return None
+            
+            # Get user data
+            cursor.execute(
+                "SELECT username, email, kem_public_key, dss_public_key FROM users WHERE username = ?", 
+                (username,)
+            )
+            user_data = cursor.fetchone()
             conn.close()
-            return None
-        
-        # Get user data
-        cursor.execute(
-            "SELECT username, email, kem_public_key, dss_public_key FROM users WHERE username = ?", 
-            (username,)
-        )
-        user_data = cursor.fetchone()
-        conn.close()
-        
-        if not user_data:
-            return None
             
-        # Create user object
-        user = {
-            'username': user_data[0],
-            'email': user_data[1],
-            'kem_public_key': user_data[2],
-            'dss_public_key': user_data[3]
-        }
-        
-        # Cache in memory
-        user_sessions[session_id] = user
-        
-        return user
-    except Exception as e:
-        app.logger.error(f"Error getting user by session: {e}")
-        return None
+            if not user_data:
+                return None
+                
+            # Create user object
+            user = {
+                'username': user_data[0],
+                'email': user_data[1],
+                'kem_public_key': user_data[2],
+                'dss_public_key': user_data[3]
+            }
+            
+            # Cache in memory
+            user_sessions[session_id] = user
+            
+            return user
+        except Exception as e:
+            app.logger.error(f"Error getting user by session: {e}")
+            return None
+    
+    # For Socket.IO authentication, use a non-blocking approach
+    if 'eventlet' in sys.modules and hasattr(eventlet, 'spawn'):
+        # Check if this is being called from a Socket.IO context
+        if hasattr(request, 'namespace') and hasattr(request, 'sid'):
+            app.logger.info(f"Using non-blocking database access for Socket.IO authentication")
+            # Use eventlet's spawn to run the database query in a separate greenlet
+            return eventlet.spawn(fetch_user_from_db, session_id).wait()
+    
+    # For regular HTTP requests, we can use the blocking approach
+    return fetch_user_from_db(session_id)
 
 # Initialize Socket.IO with the app
 from src.socket_server import init_socketio

@@ -123,61 +123,70 @@ def register_event_handlers(socketio: SocketIO) -> None:
         
         print(f"Validating session ID for socket {request.sid}")
         
-        # In a real application, you would validate the session ID against your database
-        # For this example, we'll use a simple lookup from the session store
-        from app import get_user_by_session  # Import here to avoid circular imports
+        # Import here to avoid circular imports
+        import eventlet
+        from app import get_user_by_session
         
-        user = get_user_by_session(session_id)
-        if not user:
-            print(f"Invalid session ID for socket {request.sid}")
-            emit('authentication_failed', {'message': 'Invalid session ID'})
-            return
+        # Use eventlet.spawn to run the database query in a separate greenlet
+        def authenticate_user(sid, session_id):
+            try:
+                user = get_user_by_session(session_id)
+                if not user:
+                    print(f"Invalid session ID for socket {sid}")
+                    socketio.emit('authentication_failed', {'message': 'Invalid session ID'}, room=sid)
+                    return
+                
+                username = user.get('username')
+                print(f"Found user {username} for session ID")
+                
+                # Check if user is already connected with another socket
+                if username in user_to_sid:
+                    old_sid = user_to_sid[username]
+                    if old_sid != sid:
+                        print(f"User {username} already connected with socket {old_sid}, updating to {sid}")
+                        # Remove old socket mapping
+                        if old_sid in sid_to_user:
+                            del sid_to_user[old_sid]
+                
+                # Register this socket with the user
+                sid_to_user[sid] = username
+                user_to_sid[username] = sid
+                
+                # Create a personal room for this user
+                socketio.server.enter_room(sid, username)
+                if username not in user_rooms:
+                    user_rooms[username] = set()
+                user_rooms[username].add(username)
+                
+                print(f"User {username} authenticated with socket ID {sid}")
+                print(f"Current online users: {list(user_to_sid.keys())}")
+                
+                # Notify the client of successful authentication
+                # Send both 'authenticated' (for frontend) and 'authentication_success' (for backward compatibility)
+                socketio.emit('authenticated', {
+                    'username': username,
+                    'status': 'authenticated',
+                    'message': 'Authentication successful'
+                }, room=sid)
+                
+                # Also emit the original event for backward compatibility
+                socketio.emit('authentication_success', {
+                    'username': username,
+                    'status': 'authenticated',
+                    'message': 'Authentication successful'
+                }, room=sid)
+                
+                # Notify other users about this user coming online
+                socketio.emit('user_online', {'username': username}, broadcast=True, skip_sid=sid)
+                
+                # Update the user list for all clients
+                update_user_list(socketio)
+            except Exception as e:
+                print(f"Error during authentication: {e}")
+                socketio.emit('authentication_failed', {'message': f'Authentication error: {str(e)}'}, room=sid)
         
-        username = user.get('username')
-        print(f"Found user {username} for session ID")
-        
-        # Check if user is already connected with another socket
-        if username in user_to_sid:
-            old_sid = user_to_sid[username]
-            if old_sid != request.sid:
-                print(f"User {username} already connected with socket {old_sid}, updating to {request.sid}")
-                # Remove old socket mapping
-                if old_sid in sid_to_user:
-                    del sid_to_user[old_sid]
-        
-        # Register this socket with the user
-        sid_to_user[request.sid] = username
-        user_to_sid[username] = request.sid
-        
-        # Create a personal room for this user
-        join_room(username)
-        if username not in user_rooms:
-            user_rooms[username] = set()
-        user_rooms[username].add(username)
-        
-        print(f"User {username} authenticated with socket ID {request.sid}")
-        print(f"Current online users: {list(user_to_sid.keys())}")
-        
-        # Notify the client of successful authentication
-        # Send both 'authenticated' (for frontend) and 'authentication_success' (for backward compatibility)
-        emit('authenticated', {
-            'username': username,
-            'status': 'authenticated',
-            'message': 'Authentication successful'
-        })
-        
-        # Also emit the original event for backward compatibility
-        emit('authentication_success', {
-            'username': username,
-            'status': 'authenticated',
-            'message': 'Authentication successful'
-        })
-        
-        # Notify other users about this user coming online
-        emit('user_online', {'username': username}, broadcast=True, include_self=False)
-        
-        # Update the user list for all clients
-        update_user_list(socketio)
+        # Spawn the authentication process in a separate greenlet
+        eventlet.spawn(authenticate_user, request.sid, session_id)
     
     @socketio.on('direct_message')
     def handle_direct_message(data):

@@ -41,6 +41,6 @@ if __name__ == '__main__':
         port=port,
         debug=False,  # Set to False in production
         use_reloader=False,  # Set to False in production
-        log_output=True,
-        cors_allowed_origins='*'  # This will be overridden by the app's configuration
+        log_output=True
+        # cors_allowed_origins is configured in the app.py when initializing socketio
     )

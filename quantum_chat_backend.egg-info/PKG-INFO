@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: quantum-chat-backend
+Version: 1.0.0
+Requires-Dist: flask
+Requires-Dist: flask-socketio
+Requires-Dist: flask-cors
+Requires-Dist: quantcrypt
+Requires-Dist: cryptography
+Requires-Dist: eventlet
+Requires-Dist: gunicorn
+Requires-Dist: bcrypt
+Requires-Dist: python-dotenv
+Dynamic: requires-dist
