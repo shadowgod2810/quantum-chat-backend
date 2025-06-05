@@ -313,7 +313,8 @@ def init_database():
             kem_public_key TEXT NOT NULL,
             kem_private_key TEXT NOT NULL,
             dss_public_key TEXT NOT NULL,
-            dss_private_key TEXT NOT NULL
+            dss_private_key TEXT NOT NULL,
+            key_encryption_data TEXT NOT NULL  -- Stores the encrypted encryption_key
         )
     ''')
     # Sessions table referencing users.username
@@ -462,9 +463,9 @@ def register():
     
     try:
         cursor.execute('''
-            INSERT INTO users (username, email, password_hash, kem_public_key, kem_private_key, dss_public_key, dss_private_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (username, email, password_hash, kem_public_key.hex(), encrypted_kem_private_key, dss_public_key.hex(), encrypted_dss_private_key))
+            INSERT INTO users (username, email, password_hash, kem_public_key, kem_private_key, dss_public_key, dss_private_key, key_encryption_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (username, email, password_hash, kem_public_key.hex(), encrypted_kem_private_key, dss_public_key.hex(), encrypted_dss_private_key, stored_key_data))
         conn.commit()
     except sqlite3.Error as e:
         conn.rollback()
