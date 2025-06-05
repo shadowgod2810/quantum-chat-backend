@@ -280,7 +280,7 @@ else:
         upgrade_timeout=20000,   # Double upgrade timeout to allow more time for WebSocket upgrade
         allow_upgrades=True,     # Allow transport upgrades
         http_compression=True,   # Enable HTTP compression
-        cookie=False,            # Disable cookies to avoid issues with CORS
+        cookie=True,            # Disable cookies to avoid issues with CORS
         always_connect=True,     # Always connect even if authentication fails initially
         cors_credentials=False,  # Don't send credentials for CORS
         manage_session=False     # Don't manage sessions
